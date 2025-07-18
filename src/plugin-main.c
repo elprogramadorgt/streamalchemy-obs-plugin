@@ -17,18 +17,132 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
 #include <obs-module.h>
-#include <plugin-support.h>
+#ifdef ENABLE_FRONTEND_API
+#include <obs-frontend-api.h>
+#endif
+#include <pthread.h>
+#include <stdbool.h>
+#include <string.h>
+#include <stdio.h>
+
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h> 
+#pragma comment(lib, "ws2_32.lib")
+#else
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#endif
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
 
+static pthread_t socket_thread;
+static volatile bool keep_running = true;
+
+
+// -- SOCKET FUNCTION --
+static void *socket_listener(void *arg)
+{
+#ifdef _WIN32
+	WSADATA wsa;
+	WSAStartup(MAKEWORD(2, 2), &wsa);
+#endif
+
+	#ifdef _WIN32
+		SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+		if (sock == INVALID_SOCKET) {
+			blog(LOG_ERROR, "[CPlugin] Failed to create socket");
+			return NULL;
+		}
+	#else
+		int sock = socket(AF_INET, SOCK_STREAM, 0);
+		if (sock < 0) {
+			blog(LOG_ERROR, "[CPlugin] Failed to create socket");
+			return NULL;
+		}
+	#endif
+	
+
+	struct sockaddr_in server;
+	server.sin_family = AF_INET;
+	server.sin_port = htons(12345);
+	inet_pton(AF_INET, "127.0.0.1", &server.sin_addr);
+
+	if (connect(sock, (struct sockaddr *)&server, sizeof(server)) < 0) {
+		blog(LOG_ERROR, "[CPlugin] Failed to connect to server");
+#ifdef _WIN32
+		closesocket(sock);
+		WSACleanup();
+#else
+		close(sock);
+#endif
+		return NULL;
+	}
+
+	blog(LOG_INFO, "[CPlugin] Connected to server");
+
+	char buffer[1024];
+
+	while (keep_running) {
+		int bytes = recv(sock, buffer, sizeof(buffer) - 1, 0);
+		if (bytes <= 0)
+			break;
+
+		buffer[bytes] = '\0';
+		blog(LOG_INFO, "[CPlugin] Received: %s", buffer);
+
+		if (strncmp(buffer, "SCENE:", 6) == 0) {
+	const char *scene_name = buffer + 6;
+	obs_source_t *scene = obs_get_source_by_name(scene_name);
+	if (scene) {
+		obs_frontend_set_current_scene(scene);
+		obs_source_release(scene);
+		blog(LOG_INFO, "[CPlugin] Switched to scene: %s", scene_name);
+	} else {
+		blog(LOG_WARNING, "[CPlugin] Scene not found: %s", scene_name);
+	}
+}
+
+	}
+
+#ifdef _WIN32
+	closesocket(sock);
+	WSACleanup();
+#else
+	close(sock);
+#endif
+
+	blog(LOG_INFO, "[CPlugin] Socket listener stopped");
+	return NULL;
+}
+
+// -- LOAD / UNLOAD --
 bool obs_module_load(void)
 {
-	obs_log(LOG_INFO, "plugin loaded successfully (version %s)", PLUGIN_VERSION);
+	keep_running = true;
+	if (pthread_create(&socket_thread, NULL, socket_listener, NULL) != 0) {
+		blog(LOG_ERROR, "[CPlugin] Failed to create socket thread");
+		return false;
+	}
+
+	blog(LOG_INFO, "[CPlugin] Module loaded");
 	return true;
 }
 
 void obs_module_unload(void)
 {
-	obs_log(LOG_INFO, "plugin unloaded");
+	keep_running = false;
+	pthread_join(socket_thread, NULL);
+	blog(LOG_INFO, "[CPlugin] Module unloaded");
+}
+
+
+
+
+
+const char *obs_module_description(void)
+{
+	return "OBS plugin written in C that connects to a TCP socket server";
 }
