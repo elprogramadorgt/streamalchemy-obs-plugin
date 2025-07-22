@@ -16,18 +16,24 @@ You should have received a copy of the GNU General Public License along
 with this program. If not, see <https://www.gnu.org/licenses/>
 */
 
+#define USE_LIBOBS_MAIN_THREADING
+
+// OBS
 #include <obs-module.h>
-#ifdef ENABLE_FRONTEND_API
+#include <util/platform.h>
+#include <util/threading.h>
 #include <obs-frontend-api.h>
-#endif
+
+// System
 #include <pthread.h>
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
 
+// Platform-specific
 #ifdef _WIN32
 #include <winsock2.h>
-#include <ws2tcpip.h> 
+#include <ws2tcpip.h>
 #pragma comment(lib, "ws2_32.lib")
 #else
 #include <unistd.h>
@@ -35,11 +41,35 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <sys/socket.h>
 #endif
 
+
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
 
+
+
+
+
 static pthread_t socket_thread;
 static volatile bool keep_running = true;
+
+struct switch_data {
+	char name[512];
+};
+
+
+static void switch_scene(void *data)
+{
+	struct switch_data *sd = (struct switch_data *)data;
+	obs_source_t *scene = obs_get_source_by_name(sd->name);
+	if (scene) {
+		obs_frontend_set_current_scene(scene);
+		blog(LOG_INFO, "[CPlugin3] Switched to scene (main thread): %s", sd->name);
+		obs_source_release(scene);
+	} else {
+		blog(LOG_WARNING, "[CPlugin] Scene not found: %s", sd->name);
+	}
+	bfree(sd);
+}
 
 
 // -- SOCKET FUNCTION --
@@ -81,7 +111,7 @@ static void *socket_listener(void *arg)
 		return NULL;
 	}
 
-	blog(LOG_INFO, "[CPlugin] Connected to server");
+	blog(LOG_INFO, "[CPlugin3] Connected to server");
 
 	char buffer[1024];
 
@@ -91,19 +121,18 @@ static void *socket_listener(void *arg)
 			break;
 
 		buffer[bytes] = '\0';
-		blog(LOG_INFO, "[CPlugin] Received: %s", buffer);
+		blog(LOG_INFO, "[CPlugin2] Received: %s", buffer);
 
 		if (strncmp(buffer, "SCENE:", 6) == 0) {
-	const char *scene_name = buffer + 6;
-	obs_source_t *scene = obs_get_source_by_name(scene_name);
-	if (scene) {
-		obs_frontend_set_current_scene(scene);
-		obs_source_release(scene);
-		blog(LOG_INFO, "[CPlugin] Switched to scene: %s", scene_name);
-	} else {
-		blog(LOG_WARNING, "[CPlugin] Scene not found: %s", scene_name);
-	}
-}
+			const char *scene_name = buffer + 6;
+
+			struct switch_data *sd = bzalloc(sizeof(struct switch_data));
+			strncpy(sd->name, scene_name, sizeof(sd->name) - 1);
+
+			switch_scene(sd);
+
+			//  obs_frontend_invoke(switch_scene, sd);
+		}
 
 	}
 
