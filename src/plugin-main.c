@@ -94,8 +94,8 @@ static void *socket_listener(void *arg)
 			return NULL;
 		}
 	#endif
-	
 
+	(void)arg;
 	struct sockaddr_in server;
 	server.sin_family = AF_INET;
 	server.sin_port = htons(12345);
