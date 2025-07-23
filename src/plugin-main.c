@@ -75,7 +75,6 @@ static void switch_scene(void *data)
 // -- SOCKET FUNCTION --
 static void *socket_listener(void *arg)
 {
-(void)arg;
 #ifdef _WIN32
 	WSADATA wsa;
 	WSAStartup(MAKEWORD(2, 2), &wsa);
