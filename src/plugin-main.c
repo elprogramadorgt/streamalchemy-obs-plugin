@@ -41,13 +41,8 @@ with this program. If not, see <https://www.gnu.org/licenses/>
 #include <sys/socket.h>
 #endif
 
-
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE(PLUGIN_NAME, "en-US")
-
-
-
-
 
 static pthread_t socket_thread;
 static volatile bool keep_running = true;
@@ -55,7 +50,6 @@ static volatile bool keep_running = true;
 struct switch_data {
 	char name[512];
 };
-
 
 static void switch_scene(void *data)
 {
@@ -71,7 +65,6 @@ static void switch_scene(void *data)
 	bfree(sd);
 }
 
-
 // -- SOCKET FUNCTION --
 static void *socket_listener(void *arg)
 {
@@ -80,21 +73,21 @@ static void *socket_listener(void *arg)
 	WSAStartup(MAKEWORD(2, 2), &wsa);
 #endif
 
-	#ifdef _WIN32
-		SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
-		if (sock == INVALID_SOCKET) {
-			blog(LOG_ERROR, "[CPlugin] Failed to create socket");
-			return NULL;
-		}
-	#else
-		int sock = socket(AF_INET, SOCK_STREAM, 0);
-		if (sock < 0) {
-			blog(LOG_ERROR, "[CPlugin] Failed to create socket");
-			return NULL;
-		}
-	#endif
-	
+#ifdef _WIN32
+	SOCKET sock = socket(AF_INET, SOCK_STREAM, 0);
+	if (sock == INVALID_SOCKET) {
+		blog(LOG_ERROR, "[CPlugin] Failed to create socket");
+		return NULL;
+	}
+#else
+	int sock = socket(AF_INET, SOCK_STREAM, 0);
+	if (sock < 0) {
+		blog(LOG_ERROR, "[CPlugin] Failed to create socket");
+		return NULL;
+	}
+#endif
 
+	(void)arg;
 	struct sockaddr_in server;
 	server.sin_family = AF_INET;
 	server.sin_port = htons(12345);
@@ -133,7 +126,6 @@ static void *socket_listener(void *arg)
 
 			//  obs_frontend_invoke(switch_scene, sd);
 		}
-
 	}
 
 #ifdef _WIN32
@@ -166,10 +158,6 @@ void obs_module_unload(void)
 	pthread_join(socket_thread, NULL);
 	blog(LOG_INFO, "[CPlugin] Module unloaded");
 }
-
-
-
-
 
 const char *obs_module_description(void)
 {
